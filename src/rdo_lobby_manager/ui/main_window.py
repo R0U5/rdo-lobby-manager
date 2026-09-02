@@ -28,7 +28,17 @@ class MainWindow(ctk.CTk):
         ├──────────────┴───────────────────────────┤
         │  Status Bar (color-coded indicators)    │
         └──────────────────────────────────────────┘
+
+    The editor is an inspector — it's hidden by default and only shown
+    when the user clicks Edit. The window itself resizes: starting at
+    ``settings.window_width`` (list-only baseline), it grows by
+    ``_EDITOR_WIDTH`` when the editor is revealed and shrinks back when
+    the editor is closed.
     """
+
+    # Editor pane's natural width — added to the baseline on show,
+    # subtracted on hide. 520 px comfortably fits the form fields.
+    _EDITOR_WIDTH = 520
 
     def __init__(self, controller: AppController) -> None:
         super().__init__()
@@ -47,7 +57,10 @@ class MainWindow(ctk.CTk):
         self._build_menu()
 
         self.grid_columnconfigure(0, weight=1, minsize=280)
-        self.grid_columnconfigure(1, weight=3)
+        # Column 1 (editor) starts weight=0 / minsize=0 because the
+        # editor is hidden on first build. _show_editor() restores its
+        # weight so the editor pane gets 3/4 of the available width.
+        self.grid_columnconfigure(1, weight=0, minsize=0)
         self.grid_rowconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=0)
 
@@ -69,11 +82,12 @@ class MainWindow(ctk.CTk):
             on_close=self._on_close_editor,
         )
         # Editor starts hidden — it's an inspector, not always-on chrome.
-        # It'll be .grid()'d by _show_editor() and .grid_remove()'d by
-        # _hide_editor() / _on_close_editor().
+        # _show_editor() puts it back in the grid; _hide_editor() takes it
+        # out entirely with grid_forget() so column 1 collapses and the
+        # window resizes narrower.
         self._editor_visible = False
-        self.editor_panel.grid(row=0, column=1, sticky="nsew", padx=(5, 10), pady=(10, 5))
-        self.editor_panel.grid_remove()
+        # Don't grid() the editor at all on first build. _show_editor()
+        # will do it when the user clicks Edit.
 
         self.status_bar = StatusBar(self, controller=self.controller)
         self.status_bar.grid(row=1, column=0, columnspan=2, sticky="ew", padx=10, pady=(0, 10))
@@ -168,15 +182,45 @@ class MainWindow(ctk.CTk):
         self.status_bar.show_info("Editor closed.")
 
     def _show_editor(self) -> None:
-        if not self._editor_visible:
-            self.editor_panel.grid()
-            self._editor_visible = True
+        if self._editor_visible:
+            return
+        # Restore the right-column weight and re-add the editor to the grid.
+        self.grid_columnconfigure(1, weight=3)
+        self.editor_panel.grid(row=0, column=1, sticky="nsew", padx=(5, 10), pady=(10, 5))
+        # Grow the window by the editor's natural width. Tk doesn't
+        # auto-fit a window to its content, so we resize explicitly.
+        # The editor pane takes roughly _EDITOR_WIDTH pixels at its
+        # comfortable size; the list side stays where the user put it.
+        self._resize_window_for_editor(shown=True)
+        self._editor_visible = True
 
     def _hide_editor(self) -> None:
-        if self._editor_visible:
-            self.editor_panel.grid_remove()
-            self.editor_panel.clear()
-            self._editor_visible = False
+        if not self._editor_visible:
+            return
+        # grid_forget() (not grid_remove) drops the editor from the
+        # geometry manager entirely so column 1 collapses back to its
+        # minsize — the right pane takes zero space when hidden.
+        self.editor_panel.grid_forget()
+        self.grid_columnconfigure(1, weight=0, minsize=0)
+        # Shrink the window back to the list-only width.
+        self._resize_window_for_editor(shown=False)
+        self.editor_panel.clear()
+        self._editor_visible = False
+
+    def _resize_window_for_editor(self, *, shown: bool) -> None:
+        """Adjust the window width to accommodate the editor (or not).
+
+        The stored window_width is the *list-only* baseline. When the
+        editor is shown we add a fixed _EDITOR_WIDTH; when hidden we
+        strip it back off. We never shrink below the minsize.
+        """
+        baseline = self.controller.settings.window_width
+        target = baseline + (self._EDITOR_WIDTH if shown else 0)
+        # Respect the existing minsize.
+        min_w = self.minsize()[0] or 800
+        target = max(target, min_w)
+        height = self.winfo_height() or self.controller.settings.window_height
+        self.geometry(f"{target}x{height}")
 
     def _on_apply_lobby(self) -> None:
         lobby = self.editor_panel.get_lobby_from_form()
