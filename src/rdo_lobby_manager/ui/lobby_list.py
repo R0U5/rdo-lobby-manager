@@ -25,6 +25,8 @@ class LobbyListPanel(ctk.CTkFrame):
         on_select(name):   fires when the user picks a lobby
         on_create():       fires when the New button is clicked
         on_delete(name):   fires when Delete is clicked on a selection
+        on_edit(name):     fires when Edit is clicked on a selection
+                          (called with empty string if nothing is selected)
     """
 
     def __init__(
@@ -35,12 +37,14 @@ class LobbyListPanel(ctk.CTkFrame):
         on_select: Callable[[str], None],
         on_create: Callable[[], None],
         on_delete: Callable[[str], None],
+        on_edit: Callable[[str], None],
     ) -> None:
         super().__init__(master)
         self._controller = controller
         self._on_select = on_select
         self._on_create = on_create
         self._on_delete = on_delete
+        self._on_edit = on_edit
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
@@ -58,7 +62,7 @@ class LobbyListPanel(ctk.CTkFrame):
 
         button_row = ctk.CTkFrame(self, fg_color="transparent")
         button_row.grid(row=2, column=0, padx=10, pady=(5, 10), sticky="ew")
-        button_row.grid_columnconfigure((0, 1), weight=1)
+        button_row.grid_columnconfigure((0, 1, 2), weight=1)
 
         self._new_button = ctk.CTkButton(
             button_row,
@@ -67,13 +71,21 @@ class LobbyListPanel(ctk.CTkFrame):
         )
         self._new_button.grid(row=0, column=0, padx=(0, 5), sticky="ew")
 
+        self._edit_button = ctk.CTkButton(
+            button_row,
+            text="Edit…",
+            command=self._handle_edit,
+            state="disabled",
+        )
+        self._edit_button.grid(row=0, column=1, padx=5, sticky="ew")
+
         self._delete_button = ctk.CTkButton(
             button_row,
             text="Delete",
             command=self._handle_delete,
             state="disabled",
         )
-        self._delete_button.grid(row=0, column=1, padx=(5, 0), sticky="ew")
+        self._delete_button.grid(row=0, column=2, padx=(5, 0), sticky="ew")
 
         self._selected_name: str = ""
         self._rows: dict[str, ctk.CTkButton] = {}
@@ -116,6 +128,7 @@ class LobbyListPanel(ctk.CTkFrame):
         else:
             self._selected_name = ""
             self._delete_button.configure(state="disabled")
+            self._edit_button.configure(state="disabled")
 
     def selected_name(self) -> str:
         """Return the currently-selected lobby name, or empty string."""
@@ -127,10 +140,15 @@ class LobbyListPanel(ctk.CTkFrame):
         self._selected_name = name
         self._highlight_selection()
         self._delete_button.configure(state="normal")
+        self._edit_button.configure(state="normal")
         self._on_select(name)
 
     def _handle_new(self) -> None:
         self._on_create()
+
+    def _handle_edit(self) -> None:
+        # Forward the current selection (may be empty string).
+        self._on_edit(self._selected_name)
 
     def _handle_delete(self) -> None:
         if not self._selected_name:

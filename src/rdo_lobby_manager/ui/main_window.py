@@ -57,6 +57,7 @@ class MainWindow(ctk.CTk):
             on_select=self._on_lobby_selected,
             on_create=self._on_create_lobby,
             on_delete=self._on_delete_lobby,
+            on_edit=self._on_edit_lobby,
         )
         self.list_panel.grid(row=0, column=0, sticky="nsew", padx=(10, 5), pady=(10, 5))
 
@@ -65,8 +66,14 @@ class MainWindow(ctk.CTk):
             controller=self.controller,
             on_apply=self._on_apply_lobby,
             on_update=self._on_update_lobby,
+            on_close=self._on_close_editor,
         )
+        # Editor starts hidden — it's an inspector, not always-on chrome.
+        # It'll be .grid()'d by _show_editor() and .grid_remove()'d by
+        # _hide_editor() / _on_close_editor().
+        self._editor_visible = False
         self.editor_panel.grid(row=0, column=1, sticky="nsew", padx=(5, 10), pady=(10, 5))
+        self.editor_panel.grid_remove()
 
         self.status_bar = StatusBar(self, controller=self.controller)
         self.status_bar.grid(row=1, column=0, columnspan=2, sticky="ew", padx=10, pady=(0, 10))
@@ -127,15 +134,49 @@ class MainWindow(ctk.CTk):
         self._refresh_all()
 
     def _on_lobby_selected(self, name: str) -> None:
+        # Selection alone doesn't open the editor — the user must click
+        # Edit. Selecting a different lobby while the editor is open
+        # updates its contents in-place (already shown).
         if not name:
             self.editor_panel.clear()
             return
+        if self._editor_visible:
+            try:
+                lobby = self.controller.get_lobby(name)
+                self.editor_panel.load_lobby(lobby)
+            except Exception as exc:  # noqa: BLE001
+                self.status_bar.show_error(f"Could not load lobby: {exc}")
+        # Otherwise selection is just a marker; nothing visible changes.
+
+    def _on_edit_lobby(self, name: str) -> None:
+        if not name:
+            self.status_bar.show_warning(
+                "Select a lobby first, then click Edit."
+            )
+            return
         try:
             lobby = self.controller.get_lobby(name)
-            self.editor_panel.load_lobby(lobby)
-            self.status_bar.show_info(f"Loaded lobby {name!r}")
         except Exception as exc:  # noqa: BLE001
             self.status_bar.show_error(f"Could not load lobby: {exc}")
+            return
+        self.editor_panel.load_lobby(lobby)
+        self._show_editor()
+        self.status_bar.show_info(f"Editing lobby {name!r}")
+
+    def _on_close_editor(self) -> None:
+        self._hide_editor()
+        self.status_bar.show_info("Editor closed.")
+
+    def _show_editor(self) -> None:
+        if not self._editor_visible:
+            self.editor_panel.grid()
+            self._editor_visible = True
+
+    def _hide_editor(self) -> None:
+        if self._editor_visible:
+            self.editor_panel.grid_remove()
+            self.editor_panel.clear()
+            self._editor_visible = False
 
     def _on_apply_lobby(self) -> None:
         lobby = self.editor_panel.get_lobby_from_form()
@@ -172,6 +213,10 @@ class MainWindow(ctk.CTk):
             return
         ok, msg, _ = self.controller.delete_lobby(name)
         self.status_bar.show_warning(msg) if ok else self.status_bar.show_error(msg)
+        # If the editor was showing the just-deleted lobby, hide it
+        # so the user isn't staring at a stale form.
+        if self._editor_visible:
+            self._hide_editor()
         self._refresh_all()
 
     def _on_go_public(self) -> None:

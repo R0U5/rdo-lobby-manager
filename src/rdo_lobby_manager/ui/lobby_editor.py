@@ -22,6 +22,10 @@ class LobbyEditorPanel(ctk.CTkFrame):
     The panel is "stateless" between calls to `load_lobby`. Until
     `load_lobby` is called (or `clear` is called) the form is empty
     and Apply/Update are disabled.
+
+    The panel is *not* shown by default. The parent window calls
+    ``show()`` when the user clicks Edit and ``hide()`` when the
+    panel's close button is pressed or when selection is cleared.
     """
 
     def __init__(
@@ -31,21 +35,35 @@ class LobbyEditorPanel(ctk.CTkFrame):
         controller: AppController,
         on_apply: Callable[[], None],
         on_update: Callable[[], None],
+        on_close: Callable[[], None],
     ) -> None:
         super().__init__(master)
         self._controller = controller
         self._on_apply = on_apply
         self._on_update = on_update
+        self._on_close = on_close
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(2, weight=1)
 
-        header = ctk.CTkLabel(
-            self,
+        # Header row: title + close button
+        header = ctk.CTkFrame(self, fg_color="transparent")
+        header.grid(row=0, column=0, padx=10, pady=(10, 5), sticky="ew")
+        header.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(
+            header,
             text="Lobby Editor",
             font=ctk.CTkFont(weight="bold"),
+        ).grid(row=0, column=0, sticky="w")
+
+        self._close_button = ctk.CTkButton(
+            header,
+            text="✕",
+            width=28,
+            command=self._on_close,
         )
-        header.grid(row=0, column=0, padx=10, pady=(10, 5), sticky="w")
+        self._close_button.grid(row=0, column=1, sticky="e")
 
         # --- Form fields ---
 
