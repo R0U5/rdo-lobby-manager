@@ -1,0 +1,72 @@
+name: Build Windows installer
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to stamp into the installer (e.g. 2.0.0)'
+        required: true
+        default: '2.0.0a0'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install build dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[build]"
+
+      - name: Build single-file exe with PyInstaller
+        shell: pwsh
+        run: |
+          pyinstaller packaging/rdo-lobby-manager.spec --noconfirm --clean
+
+      - name: Smoke-test the frozen exe
+        shell: pwsh
+        run: |
+          .\dist\RdoLobbyManager.exe --selftest
+        # --selftest must exit 0 with all imports resolved. If it exits
+        # non-zero, fail the build -- the user would get a confusing
+        # import error on first launch.
+
+      - name: Build Inno Setup installer
+        uses: Minionguyjpro/Inno-Setup-Action@1.2.2
+        with:
+          path: packaging/rdo-lobby-manager.iss
+          arguments: /DMyAppVersion=${{ github.ref_name == 'refs/tags/v*' && replace(github.ref_name, 'refs/tags/v', '') || inputs.version }}
+
+      - name: List build artefacts
+        shell: pwsh
+        run: |
+          Get-ChildItem -Path dist -Recurse | Select-Object FullName, Length
+
+      - name: Upload artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: RDO-Lobby-Manager-Setup
+          path: dist/RDO-Lobby-Manager-Setup-*.exe
+          if-no-files-found: error
+
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/RDO-Lobby-Manager-Setup-*.exe
+          fail_on_unmatched_files: true
